@@ -50,6 +50,14 @@ def ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def reset_dir(path: Path) -> None:
+    """(Re)create an empty directory, so a re-run never leaves stale files
+    (e.g. images removed from a since-edited source document) behind."""
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
+
+
 def write_text(path: Path, content: str) -> None:
     path.write_text(content.rstrip() + "\n", encoding="utf-8")
 
@@ -337,6 +345,7 @@ def table_to_markdown(table: Table, resolver: InlineResolver, state: ConvertStat
             cell_lines = [paragraph_inline_markdown(p, resolver, state).strip() for p in cell.paragraphs]
             cell_text = "<br>".join(line for line in cell_lines if line)
             values.append(cell_text.replace("|", "\\|"))
+            values.extend([""] * (_cell_grid_span(cell) - 1))
         rows.append(values)
 
     if not rows:
@@ -471,12 +480,12 @@ def _parse_notes(root, rels: dict[str, str], tag_name: str) -> dict[str, str]:
 # --------------------------------------------------------------------------
 
 
-def convert_docx(input_path: Path, output_root: Path) -> Path:
+def convert_docx(input_path: Path, output_root: Path, base: Optional[str] = None) -> Path:
     doc = Document(str(input_path))
-    base = sanitize_name(input_path.stem)
+    base = base or sanitize_name(input_path.stem)
 
     out_dir = output_root / base
-    ensure_dir(out_dir)
+    reset_dir(out_dir)
 
     output_md = out_dir / f"{base}.md"
     image_dir = out_dir / "images"
@@ -537,14 +546,8 @@ def convert_docx(input_path: Path, output_root: Path) -> Path:
 # --------------------------------------------------------------------------
 
 
-def convert_pdf(input_path: Path, output_root: Path) -> Path:
-    base = sanitize_name(input_path.stem)
-
-    out_dir = output_root / base
-    ensure_dir(out_dir)
-
-    output_md = out_dir / f"{base}.md"
-    image_dir = out_dir / "images"
+def convert_pdf(input_path: Path, output_root: Path, base: Optional[str] = None) -> Path:
+    base = base or sanitize_name(input_path.stem)
 
     # pymupdf4llm's internal path sanitizer (spaces/parens -> "_"/"-") builds
     # the on-disk save path from the *sanitized* string while the real folder
@@ -560,6 +563,13 @@ def convert_pdf(input_path: Path, output_root: Path) -> Path:
             image_format="png",
             dpi=150,
         ).strip()
+
+        # Parsing succeeded: only now create the output folder, so a failed
+        # (corrupt/empty) PDF never leaves stray empty folders behind.
+        out_dir = output_root / base
+        reset_dir(out_dir)
+        output_md = out_dir / f"{base}.md"
+        image_dir = out_dir / "images"
 
         tmp_prefix = re.escape(Path(tmp_dir).resolve().as_posix())
         image_index = 0
@@ -654,12 +664,12 @@ def extract_excel_images(ws, images_dir: Path, prefix: str, image_index: int) ->
     return lines, image_index
 
 
-def convert_excel(input_path: Path, output_root: Path) -> Path:
+def convert_excel(input_path: Path, output_root: Path, base: Optional[str] = None) -> Path:
     wb = load_workbook(filename=str(input_path), data_only=True)
-    base = sanitize_name(input_path.stem)
+    base = base or sanitize_name(input_path.stem)
 
     out_dir = output_root / base
-    ensure_dir(out_dir)
+    reset_dir(out_dir)
 
     images_dir = out_dir / "images"
     ensure_dir(images_dir)
@@ -716,15 +726,30 @@ def iter_input_files(path: Path) -> Iterable[Path]:
         yield from path.rglob(ext)
 
 
-def convert_file(input_path: Path, output_dir: Path) -> Path:
+def convert_file(input_path: Path, output_dir: Path, base: Optional[str] = None) -> Path:
     suffix = input_path.suffix.lower()
     if suffix == ".docx":
-        return convert_docx(input_path, output_dir)
+        return convert_docx(input_path, output_dir, base)
     if suffix in {".xlsx", ".xlsm"}:
-        return convert_excel(input_path, output_dir)
+        return convert_excel(input_path, output_dir, base)
     if suffix == ".pdf":
-        return convert_pdf(input_path, output_dir)
+        return convert_pdf(input_path, output_dir, base)
     raise ValueError(f"Unsupported file type: {input_path}")
+
+
+def _resolve_output_bases(file_paths: list[Path]) -> dict[Path, str]:
+    """Assign each input file a unique output base name. Different files whose
+    names collide after sanitize_name() (e.g. "Report?.docx" and "Report*.docx"
+    both -> "Report_") would otherwise share one output folder and silently
+    clobber each other's output."""
+    seen: dict[str, int] = {}
+    resolved: dict[Path, str] = {}
+    for file_path in file_paths:
+        base = sanitize_name(file_path.stem)
+        count = seen.get(base, 0) + 1
+        seen[base] = count
+        resolved[file_path] = base if count == 1 else f"{base} ({count})"
+    return resolved
 
 
 def main() -> int:
@@ -743,29 +768,53 @@ def main() -> int:
 
     input_path = args.input.expanduser().resolve()
     if not input_path.exists():
-        raise FileNotFoundError(f"Input not found: {input_path}")
+        print(f"Input not found: {input_path}")
+        return 1
 
     output_root = (
         args.output.expanduser().resolve()
         if args.output
         else (input_path.parent if input_path.is_file() else input_path)
     )
-    ensure_dir(output_root)
+    try:
+        ensure_dir(output_root)
+    except OSError as exc:
+        print(f"Cannot create output folder {output_root}: {exc}")
+        return 1
+
+    file_paths: list[Path] = []
+    seen: set[Path] = set()
+    for file_path in iter_input_files(input_path):
+        if file_path.name.startswith("~$") or file_path in seen:
+            continue
+        seen.add(file_path)
+        file_paths.append(file_path)
+
+    output_bases = _resolve_output_bases(file_paths)
 
     converted: list[Path] = []
-    for file_path in iter_input_files(input_path):
-        if file_path.name.startswith("~$"):
-            continue
-        converted.append(convert_file(file_path, output_root))
+    failed: list[tuple[Path, Exception]] = []
+    for file_path in file_paths:
+        try:
+            converted.append(convert_file(file_path, output_root, output_bases[file_path]))
+        except Exception as exc:  # keep processing the rest of the batch
+            failed.append((file_path, exc))
 
-    if not converted:
+    if not converted and not failed:
         print("No supported files found (.docx, .xlsx, .xlsm, .pdf).")
         return 0
 
-    print("Converted outputs:")
-    for path in converted:
-        print(f"- {path}")
-    return 0
+    if converted:
+        print("Converted outputs:")
+        for path in converted:
+            print(f"- {path}")
+
+    if failed:
+        print("Failed to convert:")
+        for path, exc in failed:
+            print(f"- {path}: {exc}")
+
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

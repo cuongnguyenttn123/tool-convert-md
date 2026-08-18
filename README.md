@@ -100,6 +100,16 @@ python3 convert_to_md.py /path/to/file.xlsx -o /path/to/output
 - Images (DOCX, Excel, PDF) are saved in each output's `images/` folder and linked with relative paths.
 - PDF headings are inferred from font size; tables are detected automatically. Conversion quality
   depends on how the PDF was produced (scanned/image-only PDFs will have little to no extractable text).
+- Excel formula cells with no cached value (e.g. a formula written by a script that was never opened
+  in Excel/LibreOffice) export as blank — this tool reads cached values only, it does not evaluate formulas.
+- Each source file's output folder is fully regenerated on every run (old contents removed first), so
+  re-converting a since-edited file never leaves stale images or `.md` files behind. Don't store your
+  own files inside a converted output folder — they'll be deleted on the next run.
+- If two different input files sanitize to the same output folder name (e.g. `Report?.docx` and
+  `Report*.docx` both become `Report_`), the tool disambiguates by appending ` (2)`, ` (3)`, etc.
+- When converting a folder, one bad/corrupt file does not stop the batch: it's reported under
+  "Failed to convert" and every other file still gets converted. The process exits with code `1`
+  if any file failed, `0` if everything succeeded.
 
 ## Main Files
 
