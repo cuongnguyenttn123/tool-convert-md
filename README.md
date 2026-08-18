@@ -1,18 +1,18 @@
 # tool-convert-md
 
-Tool Python để chuyển đổi file Word/Excel sang Markdown, có hỗ trợ tách và liên kết ảnh.
+A Python tool to convert Word/Excel files to Markdown, with image extraction and linking support.
 
-## Tính năng
+## Features
 
-- Chuyển file `.docx` thành một file `.md` cùng tên.
-- Chuyển file Excel (`.xlsx`, `.xlsm`) thành một thư mục cùng tên file.
-- Quét toàn bộ sheet trong Excel, mỗi sheet xuất ra một file `.md`.
-- Tự động trích xuất ảnh và tạo liên kết ảnh trong Markdown.
-- Giữ cấu trúc output rõ ràng, dễ quản lý.
+- Convert a `.docx` file into a `.md` file with the same base name.
+- Convert an Excel file (`.xlsx`, `.xlsm`) into a folder with the same base name.
+- Scan all sheets in an Excel workbook and export each sheet as a separate `.md` file.
+- Automatically extract images and insert Markdown image links.
+- Keep output structure clean and easy to manage.
 
-## Quy tắc output
+## Output Rules
 
-### 1) Với DOCX
+### 1) DOCX
 
 Input:
 
@@ -21,9 +21,9 @@ Input:
 Output:
 
 - `BaoCao.md`
-- `BaoCao_images/` (chỉ tạo khi có ảnh)
+- `BaoCao_images/` (created only if images are found)
 
-### 2) Với Excel
+### 2) Excel
 
 Input:
 
@@ -32,14 +32,14 @@ Input:
 Output:
 
 - `DuLieu/`
-- `DuLieu/<SheetName>.md` (mỗi sheet một file)
-- `DuLieu/images/` (chỉ tạo khi có ảnh)
+- `DuLieu/<SheetName>.md` (one file per sheet)
+- `DuLieu/images/` (created only if images are found)
 
-## Yêu cầu môi trường
+## Requirements
 
 - Python 3.9+
 
-## Cài đặt
+## Installation
 
 ```bash
 python3 -m venv .venv
@@ -47,39 +47,39 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Cách dùng
+## Usage
 
-### Chuyển một file DOCX
-
-```bash
-python3 convert_to_md.py /duong-dan/toi/file.docx
-```
-
-### Chuyển một file Excel
+### Convert a DOCX file
 
 ```bash
-python3 convert_to_md.py /duong-dan/toi/file.xlsx
+python3 convert_to_md.py /path/to/file.docx
 ```
 
-### Chuyển toàn bộ file hỗ trợ trong một thư mục
+### Convert an Excel file
 
 ```bash
-python3 convert_to_md.py /duong-dan/toi/folder
+python3 convert_to_md.py /path/to/file.xlsx
 ```
 
-### Chỉ định thư mục output
+### Convert all supported files in a folder
 
 ```bash
-python3 convert_to_md.py /duong-dan/toi/file.xlsx -o /duong-dan/output
+python3 convert_to_md.py /path/to/folder
 ```
 
-## Ghi chú
+### Specify an output directory
 
-- Tool sẽ bỏ qua file tạm của Office có tiền tố `~$`.
-- Với Excel, dữ liệu được xuất dạng bảng Markdown dựa trên vùng dữ liệu có nội dung.
-- Ảnh trong Excel được gom vào thư mục `images` và chèn link tương đối trong file Markdown của sheet.
+```bash
+python3 convert_to_md.py /path/to/file.xlsx -o /path/to/output
+```
 
-## File chính
+## Notes
 
-- `convert_to_md.py`: script chuyển đổi
-- `requirements.txt`: danh sách thư viện cần cài
+- The tool skips temporary Office files with the `~$` prefix.
+- For Excel, data is exported as Markdown tables based on the used cell range.
+- Excel images are saved in the `images` folder and linked with relative paths in each sheet Markdown file.
+
+## Main Files
+
+- `convert_to_md.py`: conversion script
+- `requirements.txt`: required dependencies
